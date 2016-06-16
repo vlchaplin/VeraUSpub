@@ -2,8 +2,8 @@
 
 
 	VeraUS
-		Collection of analysis scripts beamforming and analysis of Verasonics data,
-		cavitation mapping, etc.
+		Collection of analysis scripts for analysis of Verasonics data,
+		(beamforming, cavitation mapping, etc.).
 
 
 #####
