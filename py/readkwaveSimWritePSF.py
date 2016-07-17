@@ -12,7 +12,7 @@ from scipy import io
 from math import *;
 
 import glob
-
+from scipy.signal import hilbert as hilbert
 import matplotlib.pyplot as plt
 from matplotlib import image
 
@@ -21,14 +21,14 @@ sys.path.append('C:\\Users\\vchaplin\\Documents\\HiFU\\code\\AblationSims')
 sys.path.append('C:\\Users\\Vandiver\\Documents\\HiFU\\code\\BioHeatCpp\\PBHEswig\\x64')
 
 
-simDir="/Users/vchaplin/Data/Verasonics/PSF_simulation/runs0609/"
+simDir="/Users/vchaplin/Data/Verasonics/PSF_simulation/runs0706cw/"
 simFiles=glob.glob(simDir + "*.mat")
 
 outH5file="/Users/vchaplin/Data/Verasonics/PSF_simulation/PSF_point_0609.h5"
 
 
 #%% load template file
-file="/Users/vchaplin/Data/Verasonics/PSF_simulation/runs0609/simulation_x400_y360.mat"
+file="/Users/vchaplin/Data/Verasonics/PSF_simulation/runs0706cw/simulation_x335_y335.mat"
 
 matdict=io.loadmat(file,squeeze_me=True,struct_as_record=False)
 
@@ -52,7 +52,7 @@ c0 = np.mean(matdict['medium'].sound_speed)
 ducer_width = pitch*Nchan
 
 dx = 2e-4
-dz = 1e-4
+dz = 2e-4
 Nx = round(ducer_width/dx)
 Nz = round(6.0e-2 /dz )
 
@@ -75,6 +75,7 @@ PSFsourcePlacementMask = np.zeros(simDims,dtype=bool)
 uniqZ = {}
 uniqX = {}
 
+# "x" in the sim file name maps to depth (z) dimension
 for fi in range(0,len(simFiles)):
     matdict=io.loadmat(simFiles[fi],squeeze_me=True,struct_as_record=False,variable_names='sourceloc')
     zk,xk=matdict['sourceloc'][[0,1]]
@@ -84,7 +85,11 @@ for fi in range(0,len(simFiles)):
     uniqX["%d"%xk]=1
 #%% PSF
 
-PSF = np.zeros([])
+npointsZ = len(uniqZ)
+npointsX = len(uniqX)
+
+#large dimensionality, store as 32 bit
+PSF = np.zeros([npointsZ,npointsX,Nz,Nx],dtype=np.int32)
 
 #%%image formation
 delayed=np.zeros([Nz,Nx,Nchan])
