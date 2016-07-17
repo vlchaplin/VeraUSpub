@@ -70,7 +70,7 @@ def load_veradata_bin(datafile,params=None):
             #rf_data[:,:,f*params.numacq + a] = chandat[:,a,:,f]
             rf_data[:,:,f*params.numacq + a] = chandat[f,:,a,:].transpose()
             
-    return params
+    return (rf_data)
     
 def load_veradata_mat(datafile,params=None,removeNsamples=0):
     """
@@ -143,8 +143,12 @@ delayVsFrame = None
 
 #fileList = [fn for fn in fileList if not re.match(".*params.*",fn)]
 path="/Users/vchaplin/Data/DavisData/May_13/first_off_axis/"
+path="/Users/vchaplin/Data/Davisdata/May_13/x_axis_scans/"
+#files=[path+"bubbles_center_6V.mat", path+"bubbles_left5mm_6V.mat", path+"bubbles_right5mm_6V.mat"]
 
-files=[path+"bubbles_center_6V.mat", path+"bubbles_left5mm_6V.mat", path+"bubbles_right5mm_6V.mat"]
+files = ["/Users/vchaplin/Data/Verasonics/sonalleve_0607/3foc-agar-1000av.bin"]
+
+
 datafile=files[0]
 datafile_basename=os.path.basename(datafile)
 
@@ -156,42 +160,16 @@ params_file,ext = getParamFile(datafile)
 params = load_cavitation_params(params_file)
 
 bkg_data=None
-#if ext=="mat":
-#    #if mat file
-#    removeNsamples = 829
-#    
-#    rf_data = load_veradata_mat(datafile, params=params, removeNsamples=removeNsamples)
-#    (ns,Nchan,totframes)=rf_data.shape
-#    
-#    
-#    # look for background file in dirrectory
-#    bkgdfile = getBkgFile(datafile)
-#    if len(bkgdfile)>0:
-#        print ("BACKGROUND file: ", bkgdfile, flush=True)
-#        bkg_data = load_veradata_mat(bkgdfile,removeNsamples=removeNsamples)        
-#else:
-#    #if binary file
-#    rf_data = load_veradata_bin(datafile, params=params)
-#    (ns,Nchan,totframes)=rf_data.shape  
-        
-#if args.maxf:
-#    numf=args.maxf
-#else:            
-#    numf = params.numframes
-#    
-#if args.maxa:
-#    numa=args.maxa
-#else:            
-#    numa = params.numacq
+
         
 numf = params.numframes
 numa = params.numacq
     
-
+Nchan=params.numRcvChannels
 
 #%% construct delay array on first file only
     
-if 0:
+if 1:
     c=1490; 
     Trans={}
     Trans['spacing']=params.pitch;
@@ -213,7 +191,7 @@ if 0:
     xpnts = np.linspace(-0.5,0.5,Nx)*Nx*dx
     #zpnts = np.linspace(0,1,Nz)*Nz*dz
     
-    zpnts = np.arange(0.03,0.07,dz)
+    zpnts = np.arange(0.03,0.08,dz)
     Nz=len(zpnts)    
     
     #sensor positions
@@ -233,7 +211,7 @@ if 0:
 delayed=np.zeros([Nz,Nx,Nchan])
 
 superFrames = np.arange(0,numf)
-superFrames=[0,1,2,3,4,5,6]
+#superFrames=[0,11]
 acqs = np.arange(1,numa)
 numSF = len(superFrames)
 
@@ -243,10 +221,28 @@ dataOut=[]
 L2sqOut=[]
 for datafile in files:
     print('')
-    print('Processing: %s'% fn)   
-    removeNsamples = 829
-    rf_data = load_veradata_mat(datafile, params=params, removeNsamples=removeNsamples)
-    (ns,Nchan,totframes)=rf_data.shape    
+    print('Processing: %s'% datafile)   
+    #removeNsamples = 829
+    #rf_data = load_veradata_mat(datafile, params=params, removeNsamples=removeNsamples)
+    #(ns,Nchan,totframes)=rf_data.shape    
+    
+    
+    if ext=="mat":
+        #if mat file
+        removeNsamples = 829
+        
+        rf_data = load_veradata_mat(datafile, params=params, removeNsamples=removeNsamples)
+        (ns,Nchan,totframes)=rf_data.shape
+        
+        # look for background file in dirrectory
+        bkgdfile = getBkgFile(datafile)
+        if len(bkgdfile)>0:
+            print ("BACKGROUND file: ", bkgdfile, flush=True)
+            bkg_data = load_veradata_mat(bkgdfile,removeNsamples=removeNsamples)        
+    else:
+        #if binary file
+        rf_data = load_veradata_bin(datafile, params=params)
+        (ns,Nchan,totframes)=rf_data.shape    
     
     
     
@@ -324,8 +320,8 @@ plt.imshow(np.abs(hilbert(bmode)),extent=extent)
 
 
 
-pcmin=np.min(pcImg)
-pcmax=np.max(pcImg)
+#pcmin=np.min(pcImg)
+#pcmax=np.max(pcImg)
 
 extent = [ 100*xpnts[0], 100*xpnts[-1], 100*zpnts[-1], 100*zpnts[0] ]
 
@@ -336,15 +332,24 @@ ax.set_xlabel('cm',fontsize=14)
 ax.set_ylabel('cm',fontsize=14)
 ax.tick_params(labelsize=14)  
 
-vmin=1e4
-vmax=1e8
+vmin=None
+vmax=None
+
+(vmin,vmax)=(None,None)
 
 for di in range(0,len(dataOut)):
     #pcImg = np.mean(dataOut[di] ,axis=0)
-    pcImg = dataOut[di][5]
+    #pcImg = dataOut[di][0] - 3*L2sqOut[di][0]
+    pcImg = np.mean(dataOut[di] - L2sqOut[di] ,axis=0)
+    if vmin is None:
+        vmin=np.min(pcImg)
+    if vmax is None:
+        vmax=np.max(pcImg)    
+    
     scaledMatrix=rescaleIm(pcImg,vmin=vmin,vmax=vmax, trunc=True)
+
     rgbaIm1 = image.cm.jet(scaledMatrix )
-    mask1 = scaledMatrix < 0.0005
+    mask1 = scaledMatrix < 0.000
     
     rgbaIm1[mask1,3]=0
     
