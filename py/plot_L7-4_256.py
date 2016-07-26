@@ -28,6 +28,7 @@ f = h5py.File(hfile,'r')
 extensions = ('single','multi_1','multi_2')
 probes = ("probe1","probe2")
 powers = [5,10,20,40,60,80]
+#powers=[10,60]
 #%% same image acquistion was used for all the images
 dsetAttr1=f['multi_2/multi_2_10W/probe1/map'].attrs
 dsetAttr2=f['multi_2/multi_2_10W/probe2/map'].attrs
@@ -169,9 +170,9 @@ vsPowerCurves['cav_img']= np.zeros([len(col_it),len(powers)])
 distmats = (dist1,dist2)
 #powi=3
 
-num_img_frames=29
+num_img_frames=4
 
-acq_list = np.arange(0,580,1,dtype=int)
+acq_list = np.arange(1,580,1,dtype=int)
 acq_x = acq_list*50e-3
 
 class NoneContext:
@@ -184,8 +185,8 @@ class NoneContext:
 #with PdfPages('/Users/Vandiver/Data/Verasonics/sonalleve_20160709/maps_20160709_4frames.pdf') as pdf:    
 #with NoneContext() as pdf:
 
-pdf = PdfPages('/Users/Vandiver/Data/Verasonics/sonalleve_20160709/maps_20160709.pdf')
-    
+#pdf = PdfPages('/Users/Vandiver/Data/Verasonics/sonalleve_20160709/maps_20160709_filtHarm.pdf')
+pdf=None   
 for powi in range(0,len(powers)):
     
     fig=plt.figure(figsize=(11,11))
@@ -233,7 +234,8 @@ for powi in range(0,len(powers),1):
     
     for n in range(len(col_it)):
         
-            
+        probeSumM1 =0
+        probeSumM2 =0
             
         for m in range(len(row_it)):
             
@@ -248,51 +250,74 @@ for powi in range(0,len(powers),1):
             label=col_it[n]            
             (numf,numa) = f[ext]['rms'].shape              
             
+                        
+            
             imdata2=( np.mean( f[ext+'/mom2'][0:num_img_frames], axis=0)  )
             imdata1=( np.mean( f[ext+'/mom1'][0:num_img_frames], axis=0)  )
             imdata = (imdata2 - imdata1**2)
             
+ 
+            #imdata = imdata1
             #imdata/=np.sum(imdata)
             
             #imdata = imdata1
             if m==0:
                 imprev=imdata.copy()
             
+                probeSumM1=imdata1[31:,0:-5]    
+                probeSumM2=imdata2[31:,0:-5]
+                probeCross=f[ext+'/mom1'][0:num_img_frames,31:,0:-5]
+                (znmax,xnmax)=probeSumM1.shape
+                
             if m==1:
-                imdata =  np.flipud(np.fliplr(imdata))
+                imdata1 =  np.flipud(np.fliplr(imdata1))
+                imdata2 =  np.flipud(np.fliplr(imdata2))
+                #imdata*=np.sum(imprev)/np.sum(imdata)
+                mom1frames=f[ext+'/mom1'][0:num_img_frames,0:znmax,0:xnmax]                
                 
-                imdata*=np.sum(imprev)/np.sum(imdata)
+                probeCross*=mom1frames[:,::-1,::-1]
+                probeSumM1+=imdata1[0:znmax,0:xnmax]        
+                probeSumM2+=imdata2[0:znmax,0:xnmax]
                 
-                sumimg = np.zeros_like(imdata)
-                subsetim1 = imprev[31:,0:-5]
+                #sumimg = 0.5*probeSumM2 - probeSumM1**2             
+                sumimg = probeSumM2 -  2*np.mean(probeCross,axis=0)                
+                
+                #sumimg = np.zeros_like(imdata)
+                #subsetim1 = imprev[31:,0:-5]
                 #subsetim1=imprev
-                sumimg[0:subsetim1.shape[0],0:subsetim1.shape[1]] = subsetim1
+                #sumimg[0:subsetim1.shape[0],0:subsetim1.shape[1]] = subsetim1
                                     
-                sumimg += imdata
+                #sumimg += (imdata+imprev)**2/4
                 #imdata.
             
-            imax=0.8*np.max(imdata) 
-            if maxIm<imax:
-                maxIm=imax
+            #imax=0.8*np.max(imdata) 
+            #if maxIm<imax:
+            #    maxIm=imax
                 
             
             #vsPowerCurves['cav'][m,n,powi]=np.mean(f[ext+'/rms'][0:6,:])
             vsPowerCurves['cav'][m,n,powi]=np.mean(f[ext+'/BB'][0:(num_img_frames*numa)])
-            axList[-1].imshow(imdata)
+            axList[-1].imshow((imdata))
             plt.text(0.5,0.9, label, horizontalalignment='center',transform=plt.gca().transAxes,fontsize=16, color='r',fontweight='bold')
             #axList[-1].imshow( np.log10( np.abs(hilbert( f[ext+'/mom1'][0]) ) ) )
 
             #endfor    
+
+        maxIm=0.7*np.max(sumimg) 
+        if maxIm<imax:
+            maxIm=imax
+            
         vsPowerCurves['cav_img'][n,powi]=np.sum(sumimg)
         axList.append(fig.add_subplot(gs[2,n]))
-        axList[-1].imshow(sumimg,extent=extent)
+        axList[-1].imshow( sumimg)
 
 
     fig.text(0.5,0.95, "%dW"%powval, horizontalalignment='center',fontsize=24,color='r',fontweight='bold')
     
     for ax in axList:
         im=ax.get_images()[0]
-        im.set_clim(vmin=0,vmax=maxIm)        
+        #im.set_clim(vmin=0,vmax=(maxIm) )    
+        im.set_cmap(image.cm.jet)
     
     if pdf is not None:        
         pdf.savefig(fig)

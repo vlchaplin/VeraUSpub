@@ -17,6 +17,7 @@ import glob
 import os
 import matplotlib.pyplot as plt
 from matplotlib import image
+from matplotlib.backends.backend_pdf import PdfPages
 
 import argparse
 
@@ -35,7 +36,7 @@ def oneLogisticNotchFiltFunc(fx,f_lo,f_hi,scale):
 def LogisticNotchFilter(fx,f0,window,nharm,harmstep=1.0, scale=200.0):
     """
     Recursive construction of filter.
-    Actual filter is [fn + window[0], fn + window[1]] about each step
+    Actual filter is [fn + window[0], fn + window[1]] around each step
     """
 
     fn = f0*nharm
@@ -122,7 +123,7 @@ parser.add_argument("--nobg",help="Do not look for a matching background_* file 
 
 args = parser.parse_args()    
     
-args.f =["/Users/Vandiver/Data/Verasonics/sonalleve_20160709/single/single_5W.bin"]    
+args.f =["/Users/Vandiver/Data/Verasonics/sonalleve_20160709/multi_test/multi_test_30W_rot=45.bin"]    
 args.plot=True
 
 if args.f :
@@ -148,10 +149,10 @@ fileList = [fn for fn in fileList if not re.match(".*params.*",fn)]
 
 NFFT=0    
 
-do_fft_filt=True
+do_fft_filt=False
 #args.plot=True
-args.maxf=1
-args.maxa=6
+args.maxf=2
+args.maxa=4
 bkgdfile=""
 fnum=0
 
@@ -230,9 +231,9 @@ for datafile in fileList:
             fx = 1e-6*np.linspace(0,1,NFFT)*Fs
             win=[-0.1, 0.1]
             harmonicFilter = LogisticNotchFilter(fx,f0MHz,[-f0MHz, 0.1],1,harmstep=1.0,scale=200)
-            harmonicFilter *= LogisticNotchFilter(fx,f0MHz,[-0.05, 0.05],nharm,harmstep=1.0,scale=200)        
-            harmonicFilter *= LogisticNotchFilter(fx,f0MHz*0.5,[-0.03, 0.03],nharm,harmstep=1.0,scale=200)
-    
+            harmonicFilter *= LogisticNotchFilter(fx,f0MHz,[-0.1, 0.1],nharm,harmstep=1.0,scale=200)        
+            harmonicFilter *= LogisticNotchFilter(fx,f0MHz*0.5,[-0.1, 0.1],nharm,harmstep=1.0,scale=200)
+            harmonicFilter=1-harmonicFilter
     
     #distflat = distances[inbounds3]
     
@@ -244,6 +245,7 @@ for datafile in fileList:
         delayed=np.zeros([Nz,Nx,Nchan])
         
         superFrames = np.arange(0,numf)
+        #superFrames = np.arange(27,27+numf)
         
         acqs = np.arange(0,numa)
         numSF = len(superFrames)
@@ -251,6 +253,10 @@ for datafile in fileList:
         Moment1Imgf = np.zeros([numSF,Nz,Nx])
         Moment2Imgf = np.zeros([numSF,Nz,Nx])
         rmsPerImage = np.zeros([numSF,params.numacq])
+        bbNoisePerAcq = np.zeros([numSF*params.numacq])
+        
+        if do_fft_filt:
+            spectrumPerFrame = np.zeros([numSF,endidx])        
         
         for sfi in range(0,numSF):
             sf = superFrames[sfi]
@@ -269,11 +275,14 @@ for datafile in fileList:
                     rf_fft = np.fft.fft( rf_data[:,:,sf*params.numacq + a],NFFT,axis=0)
         
                     #efficiently multiply the filter along the first dimension
-                    filtFFT = rf_fft*harmonicFilter[:,np.newaxis]                   
-                    bbNoiseLevel = np.sum( np.abs(filtFFT[0:endidx]))
+                    filtFFT = rf_fft*harmonicFilter[:,np.newaxis]
+                    chSumSpec = np.sum(np.abs(2*rf_fft[0:endidx]),axis=1)
+                    bbNoiseLevel = np.sum( 2*np.abs(filtFFT[0:endidx])) 
                     
-                    delayed[ii[0],ii[1],ii[2]] = np.abs ( np.fft.ifft(filtFFT,n=NFFT,axis=0) )[delayinds[inbounds3],ii[2]]
+                    delayed[ii[0],ii[1],ii[2]] = np.real ( np.fft.ifft(filtFFT,n=NFFT,axis=0) )[delayinds[inbounds3],ii[2]]
                      
+                    bbNoisePerAcq[sfi*params.numacq + a]=bbNoiseLevel
+                    spectrumPerFrame[sfi] += chSumSpec               
                 else:
                     
                     delayed[ii[0],ii[1],ii[2]] = rf_data[delayinds[inbounds3],ii[2],sf*params.numacq + a]
@@ -309,6 +318,7 @@ for datafile in fileList:
         (dataname,ext) = os.path.basename(datafile).split(".")
         
         if args.plot:
+            #make image plots
             if not interactive:
                 figName = path+"/"+dataname+("_probe%d"%probenum)+".png"
                 
@@ -325,6 +335,40 @@ for datafile in fileList:
             if not interactive:
                 plt.savefig(figName)    
                 plt.close()
+                
+                
+                
+            #spectrum plots
+            if do_fft_filt:
+                if not interactive:
+                    
+                    pdfName = path+"/"+dataname+("_probe%d"%probenum)+"_filtspec.pdf"
+                    pdf = PdfPages(pdfName)
+                    print("Writing: ", pdfName,flush=True)
+                    plt.ioff()
+                
+                for sfi in range(numSF):
+                    sf=superFrames[sfi]
+                    fig=plt.figure(figsize=(9,7))
+                    ax=plt.gca()
+                    rawSpec = spectrumPerFrame[sfi]
+                    usedSpec = (harmonicFilter[0:endidx])*rawSpec       
+                    removedSpec= (1-harmonicFilter[0:endidx])*rawSpec
+                    ax.plot(fx[0:endidx],usedSpec,'b')
+                    ax.plot(fx[0:endidx],removedSpec,color=(0.8,0.8,0.8))
+                                
+                    ax.set_xlabel('MHZ',fontsize=18)
+                    ax.set_ylabel('amplitude',fontsize=18)
+                    ax.tick_params(labelsize=18)
+                    label = 'Acqs. %d - %d (probe %d)'%(sf*params.numacq+acqs[0]+1, sf*params.numacq+acqs[-1]+1, probenum)
+                    ax.text(0.5,0.95, label, horizontalalignment='center',transform=ax.transAxes,fontsize=16, color='r',fontweight='bold')
+                    ax.set_ylim([0.0, 2e9])
+                
+                    if not interactive:
+                        pdf.savefig(fig)
+                        plt.close(fig)
+                if not interactive:
+                    pdf.close()
             
         if h5outfile is not None:
             f = h5py.File(h5outfile, mode='a')
@@ -349,6 +393,8 @@ for datafile in fileList:
             dset.attrs["c"]=c
             dset.attrs['file']=datafile
             dset.attrs['bkg']=bkgdfile
+            dset.attrs['framelist']=superFrames
+            dset.attrs['acqlist']=acqs
             f.flush()
             
             dset = f.create_dataset(dsetExtension+"/mom1",data=Moment1Imgf)
@@ -358,6 +404,21 @@ for datafile in fileList:
             
             dset = f.create_dataset(dsetExtension+"/rms",data=rmsPerImage)
             f.flush()
+            
+            
+            if do_fft_filt:
+                
+                dset = f.create_dataset(dsetExtension+"/BB",data=bbNoisePerAcq)
+                dset.attrs["fMHz"]=fx
+                dset.attrs["filter"]=harmonicFilter
+                dset.attrs["NFFT"]=NFFT
+                dset.attrs["endidx"]=endidx
+                f.flush()
+                
+                dset = f.create_dataset(dsetExtension+"/specra",data=spectrumPerFrame)
+                f.flush()
+            
+            
             f.close()
             
     #end of probe for-loop
