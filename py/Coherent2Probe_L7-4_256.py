@@ -1,9 +1,10 @@
 # -*- coding: utf-8 -*-
 """
-Created on Sun Jul 10 11:13:53 2016
+Created on Wed Aug  3 13:12:30 2016
 
 @author: vlchaplin@gmail.com
 """
+
 
 import h5py
 import sys
@@ -123,8 +124,8 @@ parser.add_argument("--nobg",help="Do not look for a matching background_* file 
 
 args = parser.parse_args()    
     
-args.f =["/Users/Vandiver/Data/Verasonics/sonalleve_20160709/multi_test/multi_test_30W_rot=45.bin"]    
-args.plot=True
+#args.f =["/Users/Vandiver/Data/Verasonics/sonalleve_20160709/multi_test/multi_test_30W_rot=45.bin"]    
+#args.plot=True
 
 if args.f :
     fileList = args.f
@@ -151,12 +152,13 @@ NFFT=0
 
 do_fft_filt=False
 #args.plot=True
-args.maxf=2
-args.maxa=4
+#args.maxf=2
+#args.maxa=4
 bkgdfile=""
 fnum=0
 
 #%%
+
 for datafile in fileList:
     datafile_basename=os.path.basename(datafile)
     print('')
@@ -183,11 +185,8 @@ for datafile in fileList:
         numa = params.numacq
         
         
-        
-    
-    #construct delay array on first file only
-        
-    if fnum==0 or args.each:
+           
+    if fnum==0 :
         c=1540; 
         Trans={}
         Trans['spacing']=params.pitch;
@@ -211,16 +210,60 @@ for datafile in fileList:
         zpnts = np.arange(4e-2,9e-2,dz)
         Nz=len(zpnts)
         
+        #probe 1 position
+        ux1 = (np.linspace(-0.5,0.5,Nchan)*Nchan + 0.5)*params.pitch     
+        uz1 = np.zeros(Nchan)
+
+        #probe 2 position
+        #registration manually determined from summed images 
+        #flip left-right
+        
+        #07/09        
+        #ux2 = ux1[-1::-1] - 5*dx
+        #uz2 = 13e-2+30*dz #constant offset        
+        
+        #08/03        
+        #ux2 = ux1[-1::-1] - 0.45e-2
+        #uz2 = 13.6e-2 + 0.0135e-2
+        
+        #08/24
+        ux2 = ux1[-1::-1] - 0.40e-2
+        uz2 = 13.2e-2
+        
+        #image and resampling grids
+        ndZ1,ndX1,ndux1 = np.meshgrid(zpnts,xpnts,ux1, indexing='ij')
+        ndZ2,ndX2,ndux2 = np.meshgrid(zpnts,xpnts,ux2, indexing='ij')
+        
+        
+        distances1 = np.sqrt( (ndX1-ndux1)**2 + ndZ1**2 )
+        delayinds1 = np.round( distances1 / (c*dt)).astype(int)
+        inbounds1 = (delayinds1 < ns)
+        ii1=np.nonzero(inbounds1)
+        
+        distances2 = np.sqrt( (ndX2-ndux2)**2 + (ndZ2-uz2)**2 )
+        delayinds2 = np.round( distances2 / (c*dt)).astype(int)
+        inbounds2 = (delayinds2 < ns)
+        ii2=np.nonzero(inbounds2)
+        
+        fnum=0
+        ape1 = np.abs(ndZ1 / (2*(ndX1-ndux1)))>=fnum
+        ape2 = np.abs((ndZ2-uz2) / (2*(ndX2-ndux2)))>=fnum
+        
+        
+        del ndZ1,ndX1,ndux1,ndZ2,ndX2,ndux2
+        
+        delaySets = [(distances1,delayinds1, inbounds1, ii1,ape1), (distances2,delayinds2, inbounds2, ii2,ape2)]
+        
         #sensor positions
-        ux = (np.linspace(-0.5,0.5,Nchan)*Nchan + 0.5)*params.pitch     
+        #ux = (np.linspace(-0.5,0.5,Nchan)*Nchan + 0.5)*params.pitch     
                 
         #image and resampling grids
-        ndZ,ndX,ndux = np.meshgrid(zpnts,xpnts,ux, indexing='ij')
-        
-        distances = np.sqrt( (ndX-ndux)**2 + ndZ**2 )
-        delayinds = np.round( distances / (c*dt)).astype(int)
-        inbounds3 = (delayinds < ns)
-        ii=np.nonzero(inbounds3)
+#        ndZ,ndX,ndux = np.meshgrid(zpnts,xpnts,ux, indexing='ij')
+#        
+#        distances = np.sqrt( (ndX-ndux)**2 + ndZ**2 )
+#        delayinds = np.round( distances / (c*dt)).astype(int)
+#        inbounds3 = (delayinds < ns)
+#        ii=np.nonzero(inbounds3)
         
         if do_fft_filt and NFFT!=ns:
             NFFT = 2**ceil(log2(ns)) #next power of 2
@@ -233,25 +276,29 @@ for datafile in fileList:
             harmonicFilter = LogisticNotchFilter(fx,f0MHz,[-f0MHz, 0.1],1,harmstep=1.0,scale=200)
             harmonicFilter *= LogisticNotchFilter(fx,f0MHz,[-0.1, 0.1],nharm,harmstep=1.0,scale=200)        
             harmonicFilter *= LogisticNotchFilter(fx,f0MHz*0.5,[-0.1, 0.1],nharm,harmstep=1.0,scale=200)
-            #harmonicFilter=1-harmonicFilter
+            harmonicFilter=1-harmonicFilter
+            
+#%%image formation.  Repeat for each probe data
     
-    #distflat = distances[inbounds3]
     
-    #%%image formation.  Repeat for each probe data
-    probenum=0
-    for rf_data in (rf_probe1, rf_probe2):
-        probenum+=1        
-        
-        delayed=np.zeros([Nz,Nx,Nchan])
-        
-        superFrames = np.arange(0,numf)
+    superFrames = np.arange(0,numf)
         #superFrames = np.arange(27,27+numf)
         
-        acqs = np.arange(0,numa)
-        numSF = len(superFrames)
+    acqs = np.arange(0,numa)
+    numSF = len(superFrames)    
+    delayed=np.zeros([Nz,Nx,Nchan])
+    Moment1Imgf = np.zeros([2,numSF,numa,Nz,Nx])
+    Moment2Imgf = np.zeros([2,numSF,numa,Nz,Nx])
+    ProbeCrossTerm = np.ones([numSF,numa,Nz,Nx])    
+    
+    probenum=0
+    for rf_data in (rf_probe1, rf_probe2):
+               
+        probenum+=1 
+        pidx=probenum-1
+        delayed[:]=0
+        (distances, delayinds, inbounds3, ii,ape) = delaySets[pidx]
         
-        Moment1Imgf = np.zeros([numSF,Nz,Nx])
-        Moment2Imgf = np.zeros([numSF,Nz,Nx])
         rmsPerImage = np.zeros([numSF,params.numacq])
         bbNoisePerAcq = np.zeros([numSF*params.numacq])
         
@@ -287,21 +334,22 @@ for datafile in fileList:
                     
                     delayed[ii[0],ii[1],ii[2]] = rf_data[delayinds[inbounds3],ii[2],sf*params.numacq + a]
         
-                chandelaysum = np.sum(distances*delayed,axis=2)
-                summed_passivemap = chandelaysum**2
+                chandelaysum = np.sum(ape*distances*delayed,axis=2)
+                chandelaysum2 = np.sum( (ape*distances*delayed)**2,axis=2) 
                 
-                rmsPerImage[sfi,a] = np.sum(summed_passivemap,axis=(0,1))
                 
-                Moment1Imgf[sfi]+=chandelaysum
-                Moment2Imgf[sfi]+=summed_passivemap
                 
+                ProbeCrossTerm[sfi,a]*=chandelaysum
+                Moment1Imgf[pidx,sfi,a]+=chandelaysum**2
+                Moment2Imgf[pidx,sfi,a]+=chandelaysum2
+                
+                rmsPerImage[sfi,a] = np.sum(chandelaysum**2)
                 print("\r%d/%d"%(sf*params.numacq + a, superFrames[-1]*params.numacq + acqs[-1]),end='', flush=True)
-            
-            Moment1Imgf[sfi]/=len(acqs)        
-            Moment2Imgf[sfi]/=len(acqs)
-            
-        img1=np.mean(Moment1Imgf,axis=0)
-        img2=np.mean(Moment2Imgf,axis=0)
+            #endfor loop over acqs
+        #end loop over superframe
+                
+        img2=np.mean(Moment1Imgf[pidx]**2,axis=(0,1)) - np.mean(Moment2Imgf[pidx],axis=(0,1))
+        
         
         
         #img = np.log10( np.abs(hilbert(img)) )
@@ -396,15 +444,7 @@ for datafile in fileList:
             dset.attrs['framelist']=superFrames
             dset.attrs['acqlist']=acqs
             f.flush()
-            
-            dset = f.create_dataset(dsetExtension+"/mom1",data=Moment1Imgf)
-            f.flush()
-            dset = f.create_dataset(dsetExtension+"/mom2",data=Moment2Imgf)
-            f.flush()
-            
-            dset = f.create_dataset(dsetExtension+"/rms",data=rmsPerImage)
-            f.flush()
-            
+                        
             
             if do_fft_filt:
                 
@@ -422,5 +462,56 @@ for datafile in fileList:
             f.close()
             
     #end of probe for-loop
+            
+            
+    if h5outfile is not None:
+        f = h5py.File(h5outfile, mode='a')
+        
+        dsetExtension = folder+"/"+dataname+"/probe0"
+        #check if extension is already present. If so, remove it before writing the new data.
+        try:
+            dset = f[dsetExtension]
+            del f[dsetExtension]
+            f.flush()
+            
+            print("Writing extension (existing deleted): ", dsetExtension,flush=True)
+        except KeyError:
+            print("Writing extension: ", dsetExtension,flush=True)
+            
+        dset = f.create_dataset(dsetExtension+"/mom1",data=Moment1Imgf)
+        f.flush()
+        dset = f.create_dataset(dsetExtension+"/mom2",data=Moment2Imgf)
+        f.flush()
+        
+        dset = f.create_dataset(dsetExtension+"/cross",data=ProbeCrossTerm)
+        f.flush()
 
     fnum+=1
+    
+    if args.plot:
+        #make image plots
+    
+        varianceImage1 = np.mean(Moment1Imgf[0]**2,axis=(0,1)) - np.mean(Moment2Imgf[0],axis=(0,1))
+        varianceImage2 = np.mean(Moment1Imgf[1]**2,axis=(0,1)) - np.mean(Moment2Imgf[1],axis=(0,1)) 
+        coherenceTerm = 2*np.mean(ProbeCrossTerm,axis=(0,1))
+        summedImage = varianceImage1+varianceImage2
+        coupledImage = summedImage + coherenceTerm    
+    
+        if not interactive:
+            figName = path+"/"+dataname+"CoupledImage"+".png"
+            
+            print("Writing: ", figName,flush=True)
+            plt.ioff()
+        fig=plt.figure(figsize=(8,10))
+        ax=plt.gca()
+        im=ax.imshow(coupledImage,cmap=image.cm.jet,extent=extent,interpolation='none')
+        cbar=plt.colorbar(mappable=im)
+        ax.set_xlabel('cm',fontsize=14)
+        ax.set_ylabel('cm',fontsize=14)
+        ax.tick_params(labelsize=14)        
+        
+        if not interactive:
+            plt.savefig(figName)    
+            plt.close()
+    
+    

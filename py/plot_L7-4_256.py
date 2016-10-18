@@ -22,7 +22,7 @@ from matplotlib.backends.backend_pdf import PdfPages
 
 import pandas
 
-hfile='/Users\Vandiver\Data\Verasonics\sonalleve_20160709\pcdmaps20160709.h5'
+hfile='/Users\Vandiver\Data\Verasonics\sonalleve_20160709\pcdmaps20160709_BBfilt.h5'
 f = h5py.File(hfile,'r')
 
 extensions = ('single','multi_1','multi_2')
@@ -170,7 +170,7 @@ vsPowerCurves['cav_img']= np.zeros([len(col_it),len(powers)])
 distmats = (dist1,dist2)
 #powi=3
 
-num_img_frames=4
+num_img_frames=1
 
 acq_list = np.arange(1,580,1,dtype=int)
 acq_x = acq_list*50e-3
@@ -279,8 +279,8 @@ for powi in range(0,len(powers),1):
                 probeSumM1+=imdata1[0:znmax,0:xnmax]        
                 probeSumM2+=imdata2[0:znmax,0:xnmax]
                 
-                #sumimg = 0.5*probeSumM2 - probeSumM1**2             
-                sumimg = probeSumM2 -  2*np.mean(probeCross,axis=0)                
+                sumimg = probeSumM2 - probeSumM1**2             
+                #sumimg = probeSumM2 -  2*np.mean(probeCross,axis=0)                
                 
                 #sumimg = np.zeros_like(imdata)
                 #subsetim1 = imprev[31:,0:-5]
@@ -290,9 +290,9 @@ for powi in range(0,len(powers),1):
                 #sumimg += (imdata+imprev)**2/4
                 #imdata.
             
-            #imax=0.8*np.max(imdata) 
-            #if maxIm<imax:
-            #    maxIm=imax
+            imax=0.8*np.max(imdata) 
+            if maxIm<imax:
+                maxIm=imax
                 
             
             #vsPowerCurves['cav'][m,n,powi]=np.mean(f[ext+'/rms'][0:6,:])
@@ -303,9 +303,9 @@ for powi in range(0,len(powers),1):
 
             #endfor    
 
-        maxIm=0.7*np.max(sumimg) 
-        if maxIm<imax:
-            maxIm=imax
+        #maxIm=0.7*np.max(sumimg) 
+        #if maxIm<imax:
+        #    maxIm=imax
             
         vsPowerCurves['cav_img'][n,powi]=np.sum(sumimg)
         axList.append(fig.add_subplot(gs[2,n]))
@@ -316,7 +316,7 @@ for powi in range(0,len(powers),1):
     
     for ax in axList:
         im=ax.get_images()[0]
-        #im.set_clim(vmin=0,vmax=(maxIm) )    
+        im.set_clim(vmin=0,vmax=(maxIm) )    
         im.set_cmap(image.cm.jet)
     
     if pdf is not None:        
@@ -367,11 +367,15 @@ axCavim.tick_params(labelsize=16)
 for n in range(len(cases)):
     subset=merged.query('tag=="'+cases[n]+'"').sort_values(by='power')
 
-    axT1.plot( subset.power, subset.finalT, 'o-',**plt_attr[cases[n]])
+
+    #Tvalues = np.array(list( map ( lambda crv: max(map(float,crv[1:-1].split())), subset.maxT)  ))
+    Tvalues = subset.finalT
+    #Tvalue = np.max(subset.maxT)
+    axT1.plot( subset.power, Tvalues, 'o-',**plt_attr[cases[n]])
 
     #axT2.plot( subset.power, subset.finalT, 'o-',**plt_attr[cases[n]])
     axP1.plot( vsPowerCurves['cav'][0,n,:] + vsPowerCurves['cav'][1,n,:], subset.finalT, 'o-',**plt_attr[cases[n]])
-    axP2.plot( vsPowerCurves['cav_img'][n,:], subset.finalT, 'o-',**plt_attr[cases[n]])
+    axP2.plot( vsPowerCurves['cav_img'][n,:], Tvalues, 'o-',**plt_attr[cases[n]])
     #lt.plot( vsPowerCurves['cav'][0,n,:], subset.finalT,'o-')
     
 axP1.set_xlabel('Cav. (BB sum)',fontsize=18)
