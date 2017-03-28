@@ -147,6 +147,9 @@ def load_veradata_2x128_bin(datafile,params=None):
     
     
 def getProbe2DelaySet(uz2,ux2, zpnts, xpnts, c,dt,ns,yplane=0.0,trips=1,fnum=0):
+    """
+        Returns (distances2,delayinds2, inbounds2, ii2,ape2)
+    """
     ndZ2,ndX2,ndux2 = np.meshgrid(zpnts,xpnts,ux2, indexing='ij')
     distances2 = trips*np.sqrt( (ndX2-ndux2)**2 + yplane**2 + (ndZ2-uz2)**2 )
     delayinds2 = np.round( distances2 / (c*dt)).astype(int)
